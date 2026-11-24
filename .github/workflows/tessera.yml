@@ -1,0 +1,63 @@
+name: Tessera (desktop DAW)
+
+on:
+  push:
+    paths: ["tessera/**", ".github/workflows/tessera.yml"]
+  pull_request:
+    paths: ["tessera/**", ".github/workflows/tessera.yml"]
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: macOS universal app
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S tessera -B tessera/build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build tessera/build --config Release -j 3
+      - name: Unit tests (headless engine)
+        run: tessera/build/TesseraTests_artefacts/Release/TesseraTests
+      - name: Launch smoke test (demo project screenshot)
+        continue-on-error: true
+        run: |
+          perl -e 'alarm 90; exec @ARGV' tessera/build/Tessera_artefacts/Release/Tessera.app/Contents/MacOS/Tessera \
+            --demo --screenshot "$PWD/tessera-macos-screenshot.png"
+          test -s tessera-macos-screenshot.png
+      - name: Ad-hoc sign and package
+        run: |
+          cd tessera/build/Tessera_artefacts/Release
+          codesign --force --deep --sign - Tessera.app
+          lipo -info Tessera.app/Contents/MacOS/Tessera
+          ditto -c -k --keepParent Tessera.app "$GITHUB_WORKSPACE/Tessera-macOS.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tessera-macOS
+          path: |
+            Tessera-macOS.zip
+            tessera-macos-screenshot.png
+          if-no-files-found: warn
+
+  linux:
+    name: Linux build + tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb
+      - name: Configure
+        run: cmake -S tessera -B tessera/build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build tessera/build -j 4
+      - name: Unit tests
+        run: tessera/build/TesseraTests_artefacts/Release/TesseraTests
+      - name: Launch smoke test
+        run: |
+          timeout 90 xvfb-run -s "-screen 0 1600x1000x24" tessera/build/Tessera_artefacts/Release/Tessera --demo --screenshot "$PWD/tessera-linux-screenshot.png"
+          test -s tessera-linux-screenshot.png

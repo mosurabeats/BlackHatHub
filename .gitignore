@@ -13,3 +13,4 @@ dist-zip/
 *.log
 .DS_Store
 *.tsbuildinfo
+tessera/build/
